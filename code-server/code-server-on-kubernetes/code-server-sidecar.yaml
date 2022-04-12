@@ -1,0 +1,132 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nodeapp
+  namespace: default
+  labels:
+    app.kubernetes.io/instance: nodeapp
+    app.kubernetes.io/name: nodeapp
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: nodeapp
+      app.kubernetes.io/name: nodeapp
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: nodeapp
+        app.kubernetes.io/name: nodeapp
+    spec:
+      initContainers:
+      - name: init-chmod-data
+        command:
+        - sh
+        - -c
+        - |
+          chown -R 1000:1000 /home/coder
+        image: busybox:latest
+        imagePullPolicy: IfNotPresent      
+        resources: {}
+        securityContext:
+          runAsUser: 0
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /home/coder
+          name: data
+      # - name: init-liveness
+      #   command:
+      #   - touch
+      #   - /home/coder/liveness
+      #   image: busybox:latest
+      #   volumeMounts:
+      #   - mountPath: /home/coder
+      #     name: data
+      containers:
+      - name: nodeapp
+        image: node:16.14.2-bullseye
+        imagePullPolicy: IfNotPresent
+      #   args:
+      #     - /home/coder/index.js
+        ports:
+        - name: http
+          protocol: TCP
+          containerPort: 3000
+      #   livenessProbe: 
+      #     exec:
+      #       command:
+      #       - cat
+      #       - /home/coder/liveness
+      #     initialDelaySeconds: 10 #Default 0 
+      #     periodSeconds: 2 #Default 10 
+      #     timeoutSeconds: 1 #Default 1 
+      #     successThreshold: 1 #Default 1 
+      #     failureThreshold: 3 #Default 3
+      #   volumeMounts:
+      #   - mountPath: /home/coder
+      #     name: data
+      - name: code-server
+        image: codercom/code-server:4.2.0
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: PASSWORD
+          value: CodeServerIsAwesome
+        ports:
+        - name: http
+          protocol: TCP
+          containerPort: 8080
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /
+            port: http
+            scheme: HTTP
+          initialDelaySeconds: 30 #Default 0 
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 1
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /
+            port: http
+            scheme: HTTP
+          initialDelaySeconds: 30 #Default 0 
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 1
+        resources: {}
+        securityContext:
+          runAsUser: 1000
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /home/coder
+          name: data
+      restartPolicy: Always
+      securityContext:
+        fsGroup: 1000
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: code-server
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: code-server
+  labels:
+    app.kubernetes.io/instance: code-server
+    app.kubernetes.io/name: code-server
+spec:
+  storageClassName: hostpath
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Mi
